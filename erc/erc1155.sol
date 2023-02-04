@@ -1,71 +1,74 @@
 pragma solidity ^0.8.0;
 
-import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC1155/SafeERC1155.sol";
-import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/math/SafeMath.sol";
+interface ERC1155 {
+  function balanceOf(address owner, uint256 id) external view returns (uint256);
+  function transfer(address to, uint256[] ids, uint256[] values) external returns (bool);
+}
 
-contract NFTMarketplace is SafeERC1155 {
-    using SafeMath for uint256;
+contract ERC1155NFT is ERC1155 {
+  // Mapping of the token ID to the address that owns it
+  mapping (uint256 => address) private _tokenOwners;
 
-    mapping(address => uint256) public tokenOwnership;
-    mapping(uint256 => mapping(uint256 => address)) public tokenToOwner;
-    mapping(uint256 => mapping(uint256 => string)) public tokenMetadata;
+  // Mapping of the balance of each token ID for each address
+  mapping (address => mapping (uint256 => uint256)) private _balances;
 
-    constructor() public {
-        _mint(msg.sender, 1, 1);
-        tokenOwnership[msg.sender] = 1;
-        tokenToOwner[1][1] = msg.sender;
-    }
+  // Mapping of the metadata of each token ID
+  mapping (uint256 => string) private _tokenMetadata;
 
-    function setTokenMetadata(uint256 id, uint256 index, string memory metadata) public {
-        require(msg.sender == tokenToOwner[id][index], "The sender is not the owner of this token.");
+  // Event that is emitted when a transfer is made
+  event Transfer(
+    address indexed from,
+    address indexed to,
+    uint256[] ids,
+    uint256[] values
+  );
 
-        tokenMetadata[id][index] = metadata;
-    }
+  // Function to retrieve the balance of a token ID for a specific address
+  function balanceOf(address owner, uint256 id) external view returns (uint256) {
+    return _balances[owner][id];
+  }
 
-    function transferFrom(address from, address to, uint256 id, uint256 index) public {
-        require(from == tokenToOwner[id][index], "The from address is not the owner of this token.");
-        require(to != address(0), "The to address is the zero address.");
-        require(from != to, "The from and to addresses are the same.");
+  // Function to transfer a specific token ID from one address to another
+  function transfer(address to, uint256[] ids, uint256[] values) external returns (bool) {
+    // Verify that the sender is the owner of the token ID
+    require(_tokenOwners[ids[0]] == msg.sender, "Sender is not the owner of the token");
 
-        tokenOwnership[from] = tokenOwnership[from].sub(1);
-        tokenOwnership[to] = tokenOwnership[to].add(1);
-        tokenToOwner[id][index] = to;
+    // Transfer the token
+    _tokenOwners[ids[0]] = to;
+    _balances[msg.sender][ids[0]]--;
+    _balances[to][ids[0]]++;
 
-        _transferFrom(from, to, id, index);
-    }
+    // Emit the Transfer event
+    emit Transfer(msg.sender, to, ids, values);
 
-    function balanceOf(address owner, uint256 id) public view returns (uint256) {
-        uint256 balance = 0;
+    return true;
+  }
 
-        for (uint256 i = 0; i < balanceOfArray(owner, id); i++) {
-            if (tokenToOwner[id][i] == owner) {
-                balance = balance.add(1);
-            }
-        }
+  // Function to mint a new token with a specific ID and metadata
+  function mint(uint256 id, string memory metadata) internal {
+    // Verify that only the contract owner can mint tokens
+    require(msg.sender == owner, "Only the contract owner can mint tokens");
 
-        return balance;
-    }
+    // Mint the token
+    _tokenOwners[id] = msg.sender;
+    _tokenMetadata[id] = metadata;
+    _balances[msg.sender][id]++;
+  }
 
-    function ownerOf(uint256 id, uint256 index) public view returns (address) {
-        return tokenToOwner[id][index];
-    }
+  // Function to burn a specific token ID
+  function burn(uint256 id) internal {
+    // Verify that only the contract owner can burn tokens
+    require(msg.sender == owner, "Only the contract owner can burn tokens");
 
-    function approve(address to, uint256 id, uint256 index) public {
-        require(msg.sender == tokenToOwner[id][index], "The sender is not the owner of this token.");
-        require(to != address(0), "The to address is the zero address.");
-
-        _approve(to, id, index);
-    }
-
-    function transferOwnership(address newOwner, uint256 id, uint256 index) public {
-        require(msg.sender == tokenToOwner[id][index], "The sender is not the owner of this token.");
-        require(newOwner != address(0), "The new owner address is the zero address.");
-
-        tokenToOwner[id][index] = newOwner;
-    }
+    // Burn the token
+    _tokenOwners[id] = address(0);
+    delete _tokenMetadata[id];
+    _balances[msg.sender][id]--;
+  }
 }
 
 
-//This implementation extends the SafeERC1155 contract from OpenZeppelin, which provides a secure implementation of the ERC1155 standard. The MyToken contract has functions for minting, transferring, and querying the balance and total supply of multiple token types. It keeps track of the total supply and the ownership of each individual token type through the _tokenBalances and _tokenOwners mappings, respectively.
+//This contract implements the ERC1155 standard and includes functions for transferring NFTs, as well as minting and burning them. The contract uses mappings to keep track of the token ownership and metadata. The transfer function also verifies that the sender is the owner of the token before transferring it to another address. This contract also includes a mint function that allows the contract owner to create new NFTs with unique IDs and metadata
 
-//As with the ERC721 example, this is just an example and it is recommended to thoroughly test and audit any contract before deployment to the mainnet. Additionally,
+
+
