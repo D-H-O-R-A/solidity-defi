@@ -1,64 +1,69 @@
 pragma solidity ^0.8.0;
 
 import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC1155/SafeERC1155.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
-contract MyToken is SafeERC1155 {
-    uint256 private _totalSupply;
-    mapping (uint256 => uint256) private _tokenBalances;
-    mapping (uint256 => mapping (address => uint256)) private _tokenOwners;
+contract NFTMarketplace is SafeERC1155 {
+    using SafeMath for uint256;
 
-    constructor (string memory name, string memory symbol) public {
-        _totalSupply = 0;
-        setName(name);
-        setSymbol(symbol);
+    mapping(address => uint256) public tokenOwnership;
+    mapping(uint256 => mapping(uint256 => address)) public tokenToOwner;
+    mapping(uint256 => mapping(uint256 => string)) public tokenMetadata;
+
+    constructor() public {
+        _mint(msg.sender, 1, 1);
+        tokenOwnership[msg.sender] = 1;
+        tokenToOwner[1][1] = msg.sender;
     }
 
-    function _mint(address to, uint256[] memory ids) private {
-        for (uint256 i = 0; i < ids.length; i++) {
-            uint256 id = ids[i];
-            _tokenBalances[id]++;
-            _tokenOwners[id][to]++;
-            _totalSupply++;
-            emit TransferSingle(address(0), to, id, _tokenOwners[id][to]);
-        }
+    function setTokenMetadata(uint256 id, uint256 index, string memory metadata) public {
+        require(msg.sender == tokenToOwner[id][index], "The sender is not the owner of this token.");
+
+        tokenMetadata[id][index] = metadata;
     }
 
-    function mint(address to, uint256[] memory ids) public {
-        _mint(to, ids);
-    }
+    function transferFrom(address from, address to, uint256 id, uint256 index) public {
+        require(from == tokenToOwner[id][index], "The from address is not the owner of this token.");
+        require(to != address(0), "The to address is the zero address.");
+        require(from != to, "The from and to addresses are the same.");
 
-    function _transferFrom(address from, address to, uint256[] memory ids, uint256[] memory values) private {
-        for (uint256 i = 0; i < ids.length; i++) {
-            uint256 id = ids[i];
-            uint256 value = values[i];
-            require(_tokenOwners[id][from] >= value);
-            _tokenOwners[id][from] -= value;
-            _tokenOwners[id][to] += value;
-            emit TransferSingle(from, to, id, value);
-        }
-    }
+        tokenOwnership[from] = tokenOwnership[from].sub(1);
+        tokenOwnership[to] = tokenOwnership[to].add(1);
+        tokenToOwner[id][index] = to;
 
-    function transferFrom(address from, address to, uint256[] memory ids, uint256[] memory values) public {
-        _transferFrom(from, to, ids, values);
-    }
-
-    function transfer(address to, uint256[] memory ids, uint256[] memory values) public {
-        _transferFrom(msg.sender, to, ids, values);
+        _transferFrom(from, to, id, index);
     }
 
     function balanceOf(address owner, uint256 id) public view returns (uint256) {
-        return _tokenOwners[id][owner];
+        uint256 balance = 0;
+
+        for (uint256 i = 0; i < balanceOfArray(owner, id); i++) {
+            if (tokenToOwner[id][i] == owner) {
+                balance = balance.add(1);
+            }
+        }
+
+        return balance;
     }
 
-    function totalSupply(uint256 id) public view returns (uint256) {
-        return _tokenBalances[id];
+    function ownerOf(uint256 id, uint256 index) public view returns (address) {
+        return tokenToOwner[id][index];
     }
 
-    function exists(uint256 id) public view returns (bool) {
-        return _tokenBalances[id] > 0;
+    function approve(address to, uint256 id, uint256 index) public {
+        require(msg.sender == tokenToOwner[id][index], "The sender is not the owner of this token.");
+        require(to != address(0), "The to address is the zero address.");
+
+        _approve(to, id, index);
+    }
+
+    function transferOwnership(address newOwner, uint256 id, uint256 index) public {
+        require(msg.sender == tokenToOwner[id][index], "The sender is not the owner of this token.");
+        require(newOwner != address(0), "The new owner address is the zero address.");
+
+        tokenToOwner[id][index] = newOwner;
     }
 }
-
 
 
 //This implementation extends the SafeERC1155 contract from OpenZeppelin, which provides a secure implementation of the ERC1155 standard. The MyToken contract has functions for minting, transferring, and querying the balance and total supply of multiple token types. It keeps track of the total supply and the ownership of each individual token type through the _tokenBalances and _tokenOwners mappings, respectively.
