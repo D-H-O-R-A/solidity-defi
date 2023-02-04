@@ -3,22 +3,56 @@ pragma solidity ^0.8.0;
 import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC721/SafeERC721.sol";
 
 contract MyToken is SafeERC721 {
-    constructor() public {
-        _mint(msg.sender, 1);
-        _mint(msg.sender, 2);
-        _mint(msg.sender, 3);
+    uint256 private _totalSupply;
+    mapping (uint256 => address) private _tokenOwners;
+
+    constructor (string memory name, string memory symbol) public {
+        _totalSupply = 0;
+        _tokenOwners[0] = address(0);
+        setName(name);
+        setSymbol(symbol);
     }
 
-    function mint(address to, uint256 id) public onlyOwner {
-        require(to != address(0), "Invalid address");
-        _mint(to, id);
+    function _mint(address to, uint256 tokenId) private {
+        _totalSupply++;
+        _tokenOwners[tokenId] = to;
+        emit Transfer(address(0), to, tokenId);
     }
 
-    function transferFrom(address from, address to, uint256 id) public {
-        require(_checkTransferFrom(from, to, id), "Transfer failed");
-        _transferFrom(from, to, id);
+    function mint(address to) public {
+        _mint(to, _totalSupply);
+    }
+
+    function transferFrom(address from, address to, uint256 tokenId) public {
+        require(from == _tokenOwners[tokenId]);
+        _tokenOwners[tokenId] = to;
+        emit Transfer(from, to, tokenId);
+    }
+
+    function transfer(address to, uint256 tokenId) public {
+        require(msg.sender == _tokenOwners[tokenId]);
+        _tokenOwners[tokenId] = to;
+        emit Transfer(msg.sender, to, tokenId);
+    }
+
+    function ownerOf(uint256 tokenId) public view returns (address) {
+        return _tokenOwners[tokenId];
+    }
+
+    function balanceOf(address owner) public view returns (uint256) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < _totalSupply; i++) {
+            if (_tokenOwners[i] == owner) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    function exists(uint256 tokenId) public view returns (bool) {
+        return _tokenOwners[tokenId] != address(0);
     }
 }
 
-
-//In this example, the ERC721 token is derived from the SafeERC721 contract from the OpenZeppelin library, which provides added security features such as protection against reentrancy and protection against overflow and underflow attacks. The mint function can only be called by the owner of the contract and adds a new token with the specified ID to the to address. The transferFrom function includes a check to ensure that the transfer is valid before executing it. In this example, three tokens with the IDs 1, 2, and 3 are initially minted to the msg.sender.
+//This implementation extends the SafeERC721 contract from OpenZeppelin, which provides a secure implementation of the ERC721 standard. The MyToken contract has functions for minting, transferring, and querying ownership of tokens. It also keeps track of the total supply and the ownership of each individual token through the _tokenOwners mapping.
+//This is just an example, and it is recommended to thoroughly test and audit any contract before deployment to the mainnet. Additionally, security risks and vulnerabilities can change over time, so it's important to stay up-to-date with best practices and new developments in the Ethereum ecosystem.
