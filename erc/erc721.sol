@@ -1,56 +1,59 @@
 pragma solidity ^0.8.0;
 
-import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC721/SafeERC721.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC721/ERC721.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
-contract MyToken is SafeERC721 {
-    uint256 private _totalSupply;
-    mapping (uint256 => address) private _tokenOwners;
+contract NFTMarketplace is ERC721 {
+    using SafeMath for uint256;
 
-    constructor (string memory name, string memory symbol) public {
-        _totalSupply = 0;
-        _tokenOwners[0] = address(0);
-        setName(name);
-        setSymbol(symbol);
+    mapping(address => uint256) public tokenOwnership;
+    mapping(uint256 => address) public tokenToOwner;
+    mapping(uint256 => string) public tokenMetadata;
+
+    constructor() public {
+        _mint(msg.sender, 1);
+        tokenOwnership[msg.sender] = 1;
+        tokenToOwner[1] = msg.sender;
     }
 
-    function _mint(address to, uint256 tokenId) private {
-        _totalSupply++;
-        _tokenOwners[tokenId] = to;
-        emit Transfer(address(0), to, tokenId);
+    function setTokenMetadata(uint256 id, string memory metadata) public {
+        require(msg.sender == tokenToOwner[id], "The sender is not the owner of this token.");
+
+        tokenMetadata[id] = metadata;
     }
 
-    function mint(address to) public {
-        _mint(to, _totalSupply);
-    }
+    function transferFrom(address from, address to, uint256 id) public {
+        require(from == tokenToOwner[id], "The from address is not the owner of this token.");
+        require(to != address(0), "The to address is the zero address.");
+        require(from != to, "The from and to addresses are the same.");
 
-    function transferFrom(address from, address to, uint256 tokenId) public {
-        require(from == _tokenOwners[tokenId]);
-        _tokenOwners[tokenId] = to;
-        emit Transfer(from, to, tokenId);
-    }
+        tokenOwnership[from] = tokenOwnership[from].sub(1);
+        tokenOwnership[to] = tokenOwnership[to].add(1);
+        tokenToOwner[id] = to;
 
-    function transfer(address to, uint256 tokenId) public {
-        require(msg.sender == _tokenOwners[tokenId]);
-        _tokenOwners[tokenId] = to;
-        emit Transfer(msg.sender, to, tokenId);
-    }
-
-    function ownerOf(uint256 tokenId) public view returns (address) {
-        return _tokenOwners[tokenId];
+        _transferFrom(from, to, id);
     }
 
     function balanceOf(address owner) public view returns (uint256) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < _totalSupply; i++) {
-            if (_tokenOwners[i] == owner) {
-                count++;
-            }
-        }
-        return count;
+        return tokenOwnership[owner];
     }
 
-    function exists(uint256 tokenId) public view returns (bool) {
-        return _tokenOwners[tokenId] != address(0);
+    function ownerOf(uint256 id) public view returns (address) {
+        return tokenToOwner[id];
+    }
+
+    function approve(address to, uint256 id) public {
+        require(msg.sender == tokenToOwner[id], "The sender is not the owner of this token.");
+        require(to != address(0), "The to address is the zero address.");
+
+        _approve(to, id);
+    }
+
+    function transferOwnership(address newOwner, uint256 id) public {
+        require(msg.sender == tokenToOwner[id], "The sender is not the owner of this token.");
+        require(newOwner != address(0), "The new owner address is the zero address.");
+
+        tokenToOwner[id] = newOwner;
     }
 }
 
