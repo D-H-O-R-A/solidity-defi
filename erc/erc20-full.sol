@@ -4,57 +4,33 @@
 // Unauthorized use, copying, or distribution is strictly prohibited.
 pragma solidity ^0.8.0;
 
-contract ERC20Token {
-    string public constant name = "Token";
-    string public constant symbol = "TKN";
-    uint8 public constant decimals = 18;
-    uint256 public totalSupply;
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-    address public owner;
-    bool public paused = false;
+contract ERC20Token is ERC20, ERC20Pausable, Ownable {
     bool public mintingAllowed = true;
-
-    mapping(address => uint256) private balances;
-    mapping(address => mapping(address => uint256)) private allowed;
-    mapping(address => bool) private admins;
     mapping(address => bool) private blacklist;
+    mapping(address => bool) private admins;
+    address[] private adminList;
 
     string private website;
     string[] private socialLinks;
 
     // --- Events ---
-    event Transfer(address indexed from, address indexed to, uint256 value);
-    event Burn(address indexed burner, uint256 value);
-    event Mint(address indexed to, uint256 value);
-    event AdminChanged(address indexed admin, bool status);
     event MintingDisabled();
     event WebsiteUpdated(string website);
     event WebsiteRemoved();
     event SocialLinkAdded(string link);
     event SocialLinkRemoved(uint index, string removedLink);
-    event Paused();
-    event Unpaused();
     event Blacklisted(address indexed user);
     event RemovedFromBlacklist(address indexed user);
+    event AdminAdded(address indexed admin);
+    event AdminRemoved(address indexed admin);
 
     // --- Modifiers ---
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner");
-        _;
-    }
-
     modifier onlyAdminOrOwner() {
-        require(admins[msg.sender] || msg.sender == owner, "Only admin or owner");
-        _;
-    }
-
-    modifier onlyAdmin() {
-        require(admins[msg.sender], "Only admin");
-        _;
-    }
-
-    modifier whenNotPaused() {
-        require(!paused, "Token is paused");
+        require(admins[msg.sender] || msg.sender == owner(), "Only admin or owner");
         _;
     }
 
@@ -63,90 +39,32 @@ contract ERC20Token {
         _;
     }
 
-    // --- Constructor ---
-    constructor(uint256 initialSupply) {
-        owner = msg.sender;
+    // --- Constructor --- 
+    constructor(uint256 initialSupply) ERC20("GIC Auto X Token", "GATX") Ownable(msg.sender) {
+        _mint(msg.sender, initialSupply * 10 ** decimals());
         admins[msg.sender] = true;
-        uint256 supply = initialSupply * 10 ** uint256(decimals);
-        totalSupply = supply;
-        balances[msg.sender] = supply;
+        adminList.push(msg.sender);
     }
 
-    // --- ERC20 Functions ---
-    function transfer(address to, uint256 value)
-        public
-        whenNotPaused
-        notBlacklisted(msg.sender)
-        notBlacklisted(to)
-        returns (bool)
-    {
-        require(balances[msg.sender] >= value, "Insufficient balance");
-        balances[msg.sender] -= value;
-        balances[to] += value;
-        emit Transfer(msg.sender, to, value);
-        return true;
+    // --- _update Override ---
+    function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Pausable) {
+        require(!blacklist[from] && !blacklist[to], "Blacklisted address");
+        super._update(from, to, value);
     }
 
-    function transferFrom(address from, address to, uint256 value)
-        public
-        whenNotPaused
-        notBlacklisted(msg.sender)
-        notBlacklisted(from)
-        notBlacklisted(to)
-        returns (bool)
-    {
-        require(balances[from] >= value, "Insufficient balance");
-        require(allowed[from][msg.sender] >= value, "Allowance exceeded");
-        balances[from] -= value;
-        allowed[from][msg.sender] -= value;
-        balances[to] += value;
-        emit Transfer(from, to, value);
-        return true;
+    // --- Funções modificadas para verificação de blacklist ---
+    function approve(address spender, uint256 amount) public override notBlacklisted(msg.sender) returns (bool) {
+        return super.approve(spender, amount);
     }
 
-    function approve(address spender, uint256 value)
-        public
-        whenNotPaused
-        notBlacklisted(msg.sender)
-        notBlacklisted(spender)
-        returns (bool)
-    {
-        allowed[msg.sender][spender] = value;
-        return true;
-    }
-
-    function allowance(address owner_, address spender) public view returns (uint256) {
-        return allowed[owner_][spender];
-    }
-
-    function balanceOf(address account) public view returns (uint256) {
-        return balances[account];
-    }
-
-    // --- Burn ---
-    function burn(uint256 value)
-        public
-        whenNotPaused
-        notBlacklisted(msg.sender)
-    {
-        require(balances[msg.sender] >= value, "Insufficient balance");
-        balances[msg.sender] -= value;
-        totalSupply -= value;
-        emit Burn(msg.sender, value);
+    function transferFrom(address from, address to, uint256 amount) public override notBlacklisted(msg.sender) returns (bool) {
+        return super.transferFrom(from, to, amount);
     }
 
     // --- Mint ---
-    function mint(address to, uint256 amount)
-        public
-        onlyAdminOrOwner
-        whenNotPaused
-        notBlacklisted(to)
-    {
+    function mint(address to, uint256 amount) public onlyAdminOrOwner whenNotPaused notBlacklisted(to) {
         require(mintingAllowed, "Minting is disabled");
-        uint256 mintAmount = amount * 10 ** uint256(decimals);
-        balances[to] += mintAmount;
-        totalSupply += mintAmount;
-        emit Mint(to, mintAmount);
+        _mint(to, amount * 10 ** decimals());
     }
 
     function disableMinting() public onlyAdminOrOwner {
@@ -156,13 +74,31 @@ contract ERC20Token {
 
     // --- Admin Management ---
     function setAdmin(address admin) public onlyOwner {
+        require(!admins[admin], "Already admin");
         admins[admin] = true;
-        emit AdminChanged(admin, true);
+        adminList.push(admin);
+        emit AdminAdded(admin);
     }
 
     function removeAdmin(address admin) public onlyOwner {
+        require(admins[admin], "Not an admin");
         admins[admin] = false;
-        emit AdminChanged(admin, false);
+        for (uint i = 0; i < adminList.length; i++) {
+            if (adminList[i] == admin) {
+                adminList[i] = adminList[adminList.length - 1];
+                adminList.pop();
+                break;
+            }
+        }
+        emit AdminRemoved(admin);
+    }
+
+    function isAdmin(address addr) public view returns (bool) {
+        return admins[addr];
+    }
+
+    function getAdmins() public view returns (address[] memory) {
+        return adminList;
     }
 
     // --- Website & Socials ---
@@ -188,9 +124,7 @@ contract ERC20Token {
     function removeSocialLink(uint index) public onlyAdminOrOwner {
         require(index < socialLinks.length, "Invalid index");
         string memory removed = socialLinks[index];
-        for (uint i = index; i < socialLinks.length - 1; i++) {
-            socialLinks[i] = socialLinks[i + 1];
-        }
+        socialLinks[index] = socialLinks[socialLinks.length - 1];
         socialLinks.pop();
         emit SocialLinkRemoved(index, removed);
     }
@@ -200,12 +134,12 @@ contract ERC20Token {
     }
 
     // --- Blacklist ---
-    function setBlacklist(address user) public onlyAdmin {
+    function setBlacklist(address user) public onlyAdminOrOwner {
         blacklist[user] = true;
         emit Blacklisted(user);
     }
 
-    function removeBlacklist(address user) public onlyAdmin {
+    function removeBlacklist(address user) public onlyAdminOrOwner {
         blacklist[user] = false;
         emit RemovedFromBlacklist(user);
     }
@@ -215,25 +149,24 @@ contract ERC20Token {
     }
 
     // --- Pause ---
-    function pause() public onlyAdmin {
-        paused = true;
-        emit Paused();
+    function pause() public onlyAdminOrOwner {
+        _pause();
     }
 
-    function unpause() public onlyAdmin {
-        paused = false;
-        emit Unpaused();
+    function unpause() public onlyAdminOrOwner {
+        _unpause();
     }
 
-   function about() public pure returns (
-       string memory company,
-       string memory project,
-       string memory purpose
-   ) {
-       company = "GIC Sports";
-       project = "GIC Auto X";
-       purpose = "Utility token developed for the GIC Auto X ecosystem, including mobility, logistics and DeFi applications.";
-   }
+    // --- About ---
+    function about() public pure returns (
+        string memory company,
+        string memory project,
+        string memory purpose
+    ) {
+        company = "GIC Sports";
+        project = "GIC Auto X";
+        purpose = "Utility token developed for the GIC Auto X ecosystem, including mobility, logistics and DeFi applications.";
+    }
 
     // --- PoweredBy ---
     function poweredBy() public pure returns (string memory) {
